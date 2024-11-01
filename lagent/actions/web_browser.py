@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from http.client import HTTPSConnection
 from typing import List, Optional, Tuple, Type, Union
+from urllib.parse import urlparse, urljoin
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -699,33 +700,43 @@ class ContentFetcher:
         self.timeout = timeout
 
     @cached(cache=TTLCache(maxsize=100, ttl=600))
-    def fetch(self, url: str) -> Tuple[bool, str]:
+    def fetch(self, url: str) -> Tuple[bool, str, str]:
         try:
             response = requests.get(url, timeout=self.timeout)
             response.raise_for_status()
             html = response.content
         except requests.RequestException as e:
-            return False, str(e)
+            return False, str(e), ""
 
-        text = BeautifulSoup(html, 'html.parser').get_text()
-        cleaned_text = re.sub(r'\n+', '\n', text)
-        return True, cleaned_text
+        return self.parse_html(url, html)
 
     @acached(cache=TTLCache(maxsize=100, ttl=600))
-    async def afetch(self, url: str) -> Tuple[bool, str]:
+    async def afetch(self, url: str) -> Tuple[bool, str, str]:
         try:
             async with aiohttp.ClientSession(
                     raise_for_status=True,
                     timeout=aiohttp.ClientTimeout(self.timeout)) as session:
                 async with session.get(url) as resp:
                     html = await resp.text(errors='ignore')
-                    text = BeautifulSoup(html, 'html.parser').get_text()
-                    cleaned_text = re.sub(r'\n+', '\n', text)
-                    return True, cleaned_text
+                    return self.parse_html(url, html)
         except Exception as e:
-            return False, str(e)
-
-
+            return False, str(e), ""
+            
+    def parse_html(self, url :str, html: str) -> Tuple[bool, str, str]:
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+            
+            text = soup.get_text()
+            cleaned_text = re.sub(r'\n+', '\n', text)
+            
+            icon_url = ""
+            icon = soup.find("link", rel="icon")
+            if icon and icon.get('href'):
+                parsed_url = urlparse(url)
+                icon_url = urljoin(f"{parsed_url.scheme}://{parsed_url.netloc}", icon['href'])
+            return True, cleaned_text, icon_url
+        except Exception as e:
+            return False, str(e), ""
 class WebBrowser(BaseAction):
     """Wrapper around the Web Browser Tool.
     """
@@ -803,13 +814,15 @@ class WebBrowser(BaseAction):
             for future in as_completed(future_to_id):
                 select_id = future_to_id[future]
                 try:
-                    web_success, web_content = future.result()
+                    web_success, web_content, web_icon = future.result()
                 except Exception as exc:
                     warnings.warn(f'{select_id} generated an exception: {exc}')
                 else:
                     if web_success:
                         self.search_results[select_id][
                             'content'] = web_content[:8192]
+                        self.search_results[select_id][
+                            'icon'] = web_icon
                         new_search_results[select_id] = self.search_results[
                             select_id].copy()
                         new_search_results[select_id].pop('summ')
@@ -819,9 +832,9 @@ class WebBrowser(BaseAction):
     @tool_api
     def open_url(self, url: str) -> dict:
         print(f'Start Browsing: {url}')
-        web_success, web_content = self.fetcher.fetch(url)
+        web_success, web_content, web_icon = self.fetcher.fetch(url)
         if web_success:
-            return {'type': 'text', 'content': web_content}
+            return {'type': 'text', 'content': web_content, 'web_icon': web_icon}
         else:
             return {'error': web_content}
 
@@ -886,13 +899,15 @@ class AsyncWebBrowser(AsyncActionMixin, WebBrowser):
         async for future in async_as_completed(tasks):
             select_id = future.select_id
             try:
-                web_success, web_content = await future
+                web_success, web_content, web_icon = await future
             except Exception as exc:
                 warnings.warn(f'{select_id} generated an exception: {exc}')
             else:
                 if web_success:
                     self.search_results[select_id][
                         'content'] = web_content[:8192]
+                    self.search_results[select_id][
+                        'icon'] = web_icon
                     new_search_results[select_id] = self.search_results[
                         select_id].copy()
                     new_search_results[select_id].pop('summ')
@@ -901,8 +916,8 @@ class AsyncWebBrowser(AsyncActionMixin, WebBrowser):
     @tool_api
     async def open_url(self, url: str) -> dict:
         print(f'Start Browsing: {url}')
-        web_success, web_content = await self.fetcher.afetch(url)
+        web_success, web_content, web_icon = await self.fetcher.afetch(url)
         if web_success:
-            return {'type': 'text', 'content': web_content}
+            return {'type': 'text', 'content': web_content, 'web_icon': web_icon}
         else:
             return {'error': web_content}
