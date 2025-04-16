@@ -34,7 +34,7 @@ class BaseSearch:
     def _filter_results(self, results: List[tuple]) -> dict:
         filtered_results = {}
         count = 0
-        for url, snippet, title in results:
+        for url, snippet, title, *rest in results:
             if all(domain not in url
                    for domain in self.black_list) and not url.endswith('.pdf'):
                 filtered_results[count] = {
@@ -42,6 +42,8 @@ class BaseSearch:
                     'summ': json.dumps(snippet, ensure_ascii=False)[1:-1],
                     'title': title
                 }
+                if len(rest) > 0:
+                    filtered_results[count]['icon'] = rest[0]
                 count += 1
                 if count >= self.topk:
                     break
@@ -212,6 +214,92 @@ class BingSearch(BaseSearch):
                 for news in response.get('news', {}).get('value', []):
                     raw_results.append(
                         (news['url'], news['description'], news['name']))
+
+        return self._filter_results(raw_results)
+
+class BochaSearch(BaseSearch):
+    def __init__(self,
+                 api_key: str,
+                 topk: int = 3,
+                 black_list: List[str] = [
+                     'enoN',
+                     'youtube.com',
+                     'bilibili.com',
+                     'researchgate.net',
+                 ],
+                 **kwargs):
+        self.api_key = api_key
+        super().__init__(topk, black_list)
+
+    @cached(cache=TTLCache(maxsize=100, ttl=600))
+    def search(self, query: str, max_retry: int = 1) -> dict:
+        for attempt in range(max_retry):
+            try:
+                response = self._call_bocha_api(query)
+                return self._parse_response(response)
+            except Exception as e:
+                logging.exception(str(e))
+                warnings.warn(
+                    f'Retry {attempt + 1}/{max_retry} due to error: {e}')
+                time.sleep(random.randint(2, 5))
+        raise Exception(
+            'Failed to get search results from Bocha Search after retries.')
+
+    @acached(cache=TTLCache(maxsize=100, ttl=600))
+    async def asearch(self, query: str, max_retry: int = 1) -> dict:
+        for attempt in range(max_retry):
+            try:
+                response = await self._async_call_bocha_api(query)
+                return self._parse_response(response)
+            except Exception as e:
+                logging.exception(str(e))
+                warnings.warn(
+                    f'Retry {attempt + 1}/{max_retry} due to error: {e}')
+                await asyncio.sleep(random.randint(2, 5))
+        raise Exception(
+            'Failed to get search results from Bocha Search after retries.')
+
+    def _call_bocha_api(self, query: str) -> dict:
+        endpoint = 'https://api.bochaai.com/v1/web-search'
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        payload = json.dumps({
+            'query': query,
+            'summary': True,
+            'count': f'{self.topk * 2}'
+        })
+        response = requests.post(
+            endpoint, headers=headers, data=payload)
+        response.raise_for_status()
+        return response.json()
+
+    async def _async_call_bocha_api(self, query: str) -> dict:
+        endpoint = 'https://api.bochaai.com/v1/web-search'
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json'
+        }
+        payload = json.dumps({
+            'query': query,
+            'summary': True,
+            'count': f'{self.topk * 2}'
+        })
+        async with aiohttp.ClientSession(raise_for_status=True) as session:
+            async with session.post(
+                    endpoint,
+                    headers=headers,
+                    data=payload
+            ) as resp:
+                return await resp.json()
+
+    def _parse_response(self, response: dict) -> dict:
+        raw_results = []
+        for page_info in response.get('data', {}).get('webPages', {}).get('value', []):
+            raw_results.append((
+                page_info['url'], page_info['snippet'], page_info['name'], page_info.get('siteIcon', '')
+            ))
 
         return self._filter_results(raw_results)
 
