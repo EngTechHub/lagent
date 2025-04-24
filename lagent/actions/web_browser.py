@@ -298,7 +298,7 @@ class BochaSearch(BaseSearch):
         raw_results = []
         for page_info in response.get('data', {}).get('webPages', {}).get('value', []):
             raw_results.append((
-                page_info['url'], page_info['snippet'], page_info['name'], page_info.get('siteIcon', '')
+                page_info['url'], page_info['summary'], page_info['name'], page_info.get('siteIcon', '')
             ))
 
         return self._filter_results(raw_results)
