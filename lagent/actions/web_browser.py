@@ -762,12 +762,30 @@ class TencentSearch(BaseSearch):
         return resp.get('Response', dict())
 
     async def _async_call_tencent_api(self, query: str):
+        import os
         headers, payload = self._get_headers_and_payload(query)
-        async with aiohttp.ClientSession(raise_for_status=True) as session:
+
+        # Get proxy settings from environment variables
+        proxy = None
+        if os.getenv('HTTPS_PROXY'):
+            proxy = os.getenv('HTTPS_PROXY')
+        elif os.getenv('HTTP_PROXY'):
+            proxy = os.getenv('HTTP_PROXY')
+
+        connector = None
+        if proxy:
+            # Create a connector with proxy
+            connector = aiohttp.TCPConnector()
+
+        async with aiohttp.ClientSession(
+                raise_for_status=True,
+                connector=connector
+        ) as session:
             async with session.post(
                     'https://' + self.host.lstrip('/'),
                     headers=headers,
-                    data=payload) as resp:
+                    data=payload,
+                    proxy=proxy) as resp:
                 return (await resp.json()).get('Response', {})
 
     def _parse_response(self, response: dict) -> dict:
@@ -800,18 +818,31 @@ class ContentFetcher:
         return True, cleaned_text
 
     @acached(cache=TTLCache(maxsize=100, ttl=600))
-    async def afetch(self, url: str) -> Tuple[bool, str]:
+    async def afetch(self, url: str) -> Tuple[bool, str, str]:
         try:
+            import os
+
+            # Get proxy settings from environment variables
+            proxy = None
+            if os.getenv('HTTPS_PROXY'):
+                proxy = os.getenv('HTTPS_PROXY')
+            elif os.getenv('HTTP_PROXY'):
+                proxy = os.getenv('HTTP_PROXY')
+
+            connector = None
+            if proxy:
+                # Create a connector with proxy
+                connector = aiohttp.TCPConnector()
+
             async with aiohttp.ClientSession(
                     raise_for_status=True,
-                    timeout=aiohttp.ClientTimeout(self.timeout)) as session:
-                async with session.get(url) as resp:
+                    timeout=aiohttp.ClientTimeout(self.timeout),
+                    connector=connector) as session:
+                async with session.get(url, proxy=proxy) as resp:
                     html = await resp.text(errors='ignore')
-                    text = BeautifulSoup(html, 'html.parser').get_text()
-                    cleaned_text = re.sub(r'\n+', '\n', text)
-                    return True, cleaned_text
+                    return self.parse_html(url, html)
         except Exception as e:
-            return False, str(e)
+            return False, str(e), ""
 
 
 class WebBrowser(BaseAction):
