@@ -229,6 +229,7 @@ class BochaSearch(BaseSearch):
                  ],
                  **kwargs):
         self.api_key = api_key
+        self.proxy = kwargs.get('proxy')
         super().__init__(topk, black_list)
 
     @cached(cache=TTLCache(maxsize=100, ttl=600))
@@ -271,11 +272,12 @@ class BochaSearch(BaseSearch):
             'count': f'{self.topk * 2}'
         })
         response = requests.post(
-            endpoint, headers=headers, data=payload)
+            endpoint, headers=headers, data=payload, proxies=self.proxy)
         response.raise_for_status()
         return response.json()
 
     async def _async_call_bocha_api(self, query: str) -> dict:
+        import os
         endpoint = 'https://api.bochaai.com/v1/web-search'
         headers = {
             'Authorization': f'Bearer {self.api_key}',
@@ -286,11 +288,28 @@ class BochaSearch(BaseSearch):
             'summary': True,
             'count': f'{self.topk * 2}'
         })
-        async with aiohttp.ClientSession(raise_for_status=True) as session:
+        
+        # Get proxy settings from environment variables
+        proxy = None
+        if os.getenv('HTTPS_PROXY'):
+            proxy = os.getenv('HTTPS_PROXY')
+        elif os.getenv('HTTP_PROXY'):
+            proxy = os.getenv('HTTP_PROXY')
+
+        connector = None
+        if proxy:
+            # Create a connector with proxy
+            connector = aiohttp.TCPConnector()
+
+        async with aiohttp.ClientSession(
+                raise_for_status=True,
+                connector=connector
+        ) as session:
             async with session.post(
                     endpoint,
                     headers=headers,
-                    data=payload
+                    data=payload,
+                    proxy=proxy
             ) as resp:
                 return await resp.json()
 
