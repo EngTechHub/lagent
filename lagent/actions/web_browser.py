@@ -314,13 +314,20 @@ class BochaSearch(BaseSearch):
                 return await resp.json()
 
     def _parse_response(self, response: dict) -> dict:
+        # Debug: print the response structure to understand the data format
+        import json
+        print(f"DEBUG BochaSearch response: {json.dumps(response, indent=2, ensure_ascii=False)}")
+        
         raw_results = []
         for page_info in response.get('data', {}).get('webPages', {}).get('value', []):
             raw_results.append((
                 page_info['url'], page_info['summary'], page_info['name'], page_info.get('siteIcon', '')
             ))
 
-        return self._filter_results(raw_results)
+        print(f"DEBUG BochaSearch raw_results count: {len(raw_results)}")
+        filtered_results = self._filter_results(raw_results)
+        print(f"DEBUG BochaSearch filtered_results count: {len(filtered_results)}")
+        return filtered_results
 
 
 class BraveSearch(BaseSearch):
@@ -837,7 +844,7 @@ class ContentFetcher:
         return True, cleaned_text
 
     @acached(cache=TTLCache(maxsize=100, ttl=600))
-    async def afetch(self, url: str) -> Tuple[bool, str, str]:
+    async def afetch(self, url: str) -> Tuple[bool, str]:
         try:
             import os
 
@@ -859,9 +866,12 @@ class ContentFetcher:
                     connector=connector) as session:
                 async with session.get(url, proxy=proxy) as resp:
                     html = await resp.text(errors='ignore')
-                    return self.parse_html(url, html)
+                    
+                    text = BeautifulSoup(html, 'html.parser').get_text()
+                    cleaned_text = re.sub(r'\n+', '\n', text)
+                    return True, cleaned_text
         except Exception as e:
-            return False, str(e), ""
+            return False, str(e)
 
 
 class WebBrowser(BaseAction):
