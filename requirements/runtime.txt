@@ -3,7 +3,6 @@ aiohttp
 arxiv
 asyncache
 distro
-duckduckgo_search
 filelock
 func_timeout
 griffe<1.0

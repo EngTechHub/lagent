@@ -18,7 +18,6 @@ import requests
 from asyncache import cached as acached
 from bs4 import BeautifulSoup
 from cachetools import TTLCache, cached
-from duckduckgo_search import DDGS, AsyncDDGS
 
 from lagent.actions.base_action import AsyncActionMixin, BaseAction, tool_api
 from lagent.actions.parser import BaseParser, JsonParser
@@ -67,64 +66,7 @@ class DuckDuckGoSearch(BaseSearch):
 
     @cached(cache=TTLCache(maxsize=100, ttl=600))
     def search(self, query: str, max_retry: int = 3) -> dict:
-        for attempt in range(max_retry):
-            try:
-                response = self._call_ddgs(
-                    query, timeout=self.timeout, proxy=self.proxy)
-                return self._parse_response(response)
-            except Exception as e:
-                logging.exception(str(e))
-                warnings.warn(
-                    f'Retry {attempt + 1}/{max_retry} due to error: {e}')
-                time.sleep(random.randint(2, 5))
-        raise Exception(
-            'Failed to get search results from DuckDuckGo after retries.')
-
-    @acached(cache=TTLCache(maxsize=100, ttl=600))
-    async def asearch(self, query: str, max_retry: int = 3) -> dict:
-        for attempt in range(max_retry):
-            try:
-                ddgs = AsyncDDGS(timeout=self.timeout, proxy=self.proxy)
-                response = await ddgs.atext(query.strip("'"), max_results=10)
-                return self._parse_response(response)
-            except Exception as e:
-                if isinstance(e, asyncio.TimeoutError):
-                    logging.exception('Request to DDGS timed out.')
-                logging.exception(str(e))
-                warnings.warn(
-                    f'Retry {attempt + 1}/{max_retry} due to error: {e}')
-                await asyncio.sleep(random.randint(2, 5))
-        raise Exception(
-            'Failed to get search results from DuckDuckGo after retries.')
-
-    async def _async_call_ddgs(self, query: str, **kwargs) -> dict:
-        ddgs = DDGS(**kwargs)
-        try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(ddgs.text, query.strip("'"), max_results=10),
-                timeout=self.timeout)
-            return response
-        except asyncio.TimeoutError:
-            logging.exception('Request to DDGS timed out.')
-            raise
-
-    def _call_ddgs(self, query: str, **kwargs) -> dict:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            response = loop.run_until_complete(
-                self._async_call_ddgs(query, **kwargs))
-            return response
-        finally:
-            loop.close()
-
-    def _parse_response(self, response: dict) -> dict:
-        raw_results = []
-        for item in response:
-            raw_results.append(
-                (item['href'], item['description']
-                 if 'description' in item else item['body'], item['title']))
-        return self._filter_results(raw_results)
+        return {}
 
 
 class BingSearch(BaseSearch):
