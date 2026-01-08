@@ -559,25 +559,27 @@ class TencentSearch(BaseSearch):
             Supports multiple values separated by commas. Example: `30010255`.
     """
 
-    def __init__(self,
-                 secret_id: str = 'Your SecretId',
-                 secret_key: str = 'Your SecretKey',
-                 api_key: str = '',
-                 action: str = 'SearchCommon',
-                 version: str = '2020-12-29',
-                 service: str = 'tms',
-                 host: str = 'tms.tencentcloudapi.com',
-                 topk: int = 3,
-                 tsn: int = None,
-                 insite: str = None,
-                 category: str = None,
-                 vrid: str = None,
-                 black_list: List[str] = [
-                     'enoN',
-                     'youtube.com',
-                     'bilibili.com',
-                     'researchgate.net',
-                 ]):
+    def __init__(
+        self,
+        secret_id: str = "Your SecretId",
+        secret_key: str = "Your SecretKey",
+        api_key: str = "",
+        action: str = "SearchPro",
+        version: str = "2025-05-08",
+        service: str = "wsa",
+        host: str = "wsa.tencentcloudapi.com",
+        topk: int = 3,
+        tsn: int = None,
+        insite: str = None,
+        category: str = None,
+        vrid: str = None,
+        black_list: List[str] = [
+            "enoN",
+            "youtube.com",
+            "bilibili.com",
+            "researchgate.net",
+        ],
+    ):
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.api_key = api_key
@@ -715,11 +717,12 @@ class TencentSearch(BaseSearch):
     def _parse_response(self, response: dict) -> dict:
         raw_results = []
         for item in response.get('Pages', []):
-            display = json.loads(item['Display'])
+            display = json.loads(item)
             if not display['url']:
                 continue
-            raw_results.append((display['url'], display['content']
-                                or display['abstract_info'], display['title']))
+            raw_results.append(
+                (display.get("url"), display.get("passage") or display.get("abstract_info"), display.get("title"))
+            )
         return self._filter_results(raw_results)
 
 
